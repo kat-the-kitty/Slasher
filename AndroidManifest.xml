@@ -8,13 +8,13 @@
         android:minSdkVersion="21"
         android:targetSdkVersion="33" />
 
-    <!-- Basic runtime and background permissions -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
@@ -22,7 +22,6 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@style/AppTheme">
 
-        <!-- Welcome Activity -->
         <activity
             android:name=".WelcomeActivity"
             android:exported="true">
@@ -32,17 +31,14 @@
             </intent-filter>
         </activity>
 
-        <!-- Profile Setup Activity -->
         <activity android:name=".ProfileSetupActivity" android:exported="false" />
 
-        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="false"
             android:turnScreenOn="true"
             android:showWhenLocked="false" />
 
-        <!-- Boot receiver -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -52,7 +48,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Accessibility Service -->
         <service
             android:name=".MyAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
