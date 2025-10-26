@@ -1,10 +1,8 @@
 package kitty.kat.dev.slasher;
 
 import android.Manifest;
-import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -22,6 +20,7 @@ import android.widget.Toast;
 
 public class WelcomeActivity extends Activity {
     
+    private static final int REQUEST_ACCOUNT_PICKER = 1000;
     private static final int REQUEST_PERMISSIONS = 1001;
     private static final int REQUEST_OVERLAY = 1002;
     private static final int REQUEST_BATTERY = 1003;
@@ -107,51 +106,22 @@ public class WelcomeActivity extends Activity {
     }
     
     private void signInWithGoogle() {
-        // Check if we have GET_ACCOUNTS permission
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Please grant account access permission", Toast.LENGTH_SHORT).show();
-                requestPermissions(new String[]{Manifest.permission.GET_ACCOUNTS}, REQUEST_PERMISSIONS);
-                return;
-            }
+        // Use the system account picker - this shows the proper Google account chooser
+        Intent intent = AccountManager.newChooseAccountIntent(
+            null,                    // selectedAccount
+            null,                    // allowableAccounts
+            new String[]{"com.google"}, // allowableAccountTypes
+            null,                    // descriptionOverrideText (we can set app name here)
+            null,                    // addAccountAuthTokenType
+            null,                    // addAccountRequiredFeatures
+            null                     // addAccountOptions
+        );
+        
+        try {
+            startActivityForResult(intent, REQUEST_ACCOUNT_PICKER);
+        } catch (Exception e) {
+            Toast.makeText(this, "Unable to open Google account picker", Toast.LENGTH_LONG).show();
         }
-        
-        // Get Google accounts on device
-        AccountManager accountManager = AccountManager.get(this);
-        Account[] accounts = accountManager.getAccountsByType("com.google");
-        
-        if (accounts.length == 0) {
-            Toast.makeText(this, "No Google account found. Please add one in Settings.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        
-        // Show account picker dialog if multiple accounts
-        if (accounts.length == 1) {
-            // Only one account, use it directly
-            selectedGoogleAccount = accounts[0].name;
-            proceedWithAccount();
-        } else {
-            // Multiple accounts, show picker
-            showAccountPickerDialog(accounts);
-        }
-    }
-    
-    private void showAccountPickerDialog(Account[] accounts) {
-        String[] accountNames = new String[accounts.length];
-        for (int i = 0; i < accounts.length; i++) {
-            accountNames[i] = accounts[i].name;
-        }
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Choose Google Account");
-        builder.setItems(accountNames, (dialog, which) -> {
-            selectedGoogleAccount = accountNames[which];
-            proceedWithAccount();
-        });
-        builder.setNegativeButton("Cancel", null);
-        
-        AlertDialog dialog = builder.create();
-        dialog.show();
     }
     
     private void proceedWithAccount() {
@@ -215,15 +185,28 @@ public class WelcomeActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSIONS) {
-            // Permissions granted or denied, continue anyway
-            // User can retry if they denied
+            // Permissions granted or denied
+            // User can click sign in button to continue
         }
     }
     
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_OVERLAY) {
+        
+        if (requestCode == REQUEST_ACCOUNT_PICKER) {
+            if (resultCode == RESULT_OK && data != null) {
+                String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
+                if (accountName != null) {
+                    selectedGoogleAccount = accountName;
+                    proceedWithAccount();
+                } else {
+                    Toast.makeText(this, "No account selected", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Toast.makeText(this, "Account selection cancelled", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == REQUEST_OVERLAY) {
             // Overlay permission result, continue to battery
             requestBatteryPermission();
         } else if (requestCode == REQUEST_BATTERY) {
