@@ -4,13 +4,13 @@ import android.Manifest;
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -30,6 +30,7 @@ public class WelcomeActivity extends Activity {
     private static final String KEY_GOOGLE_ACCOUNT = "googleAccount";
     
     private String selectedGoogleAccount = null;
+    private boolean permissionsRequested = false;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,6 +45,12 @@ public class WelcomeActivity extends Activity {
             startActivity(new Intent(this, MainActivity.class));
             finish();
             return;
+        }
+        
+        // Request all permissions immediately on first open
+        if (!permissionsRequested) {
+            requestAllPermissions();
+            permissionsRequested = true;
         }
         
         // Create UI
@@ -89,10 +96,21 @@ public class WelcomeActivity extends Activity {
         setContentView(layout);
     }
     
+    private void requestAllPermissions() {
+        // Request all dangerous permissions at once
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(new String[]{
+                Manifest.permission.GET_ACCOUNTS,
+                Manifest.permission.WAKE_LOCK
+            }, REQUEST_PERMISSIONS);
+        }
+    }
+    
     private void signInWithGoogle() {
-        // Request GET_ACCOUNTS permission first
+        // Check if we have GET_ACCOUNTS permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Please grant account access permission", Toast.LENGTH_SHORT).show();
                 requestPermissions(new String[]{Manifest.permission.GET_ACCOUNTS}, REQUEST_PERMISSIONS);
                 return;
             }
@@ -107,36 +125,51 @@ public class WelcomeActivity extends Activity {
             return;
         }
         
-        // Use first Google account (or show picker if multiple)
-        selectedGoogleAccount = accounts[0].name;
+        // Show account picker dialog if multiple accounts
+        if (accounts.length == 1) {
+            // Only one account, use it directly
+            selectedGoogleAccount = accounts[0].name;
+            proceedWithAccount();
+        } else {
+            // Multiple accounts, show picker
+            showAccountPickerDialog(accounts);
+        }
+    }
+    
+    private void showAccountPickerDialog(Account[] accounts) {
+        String[] accountNames = new String[accounts.length];
+        for (int i = 0; i < accounts.length; i++) {
+            accountNames[i] = accounts[i].name;
+        }
         
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Choose Google Account");
+        builder.setItems(accountNames, (dialog, which) -> {
+            selectedGoogleAccount = accountNames[which];
+            proceedWithAccount();
+        });
+        builder.setNegativeButton("Cancel", null);
+        
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+    
+    private void proceedWithAccount() {
         Toast.makeText(this, "Signed in as: " + selectedGoogleAccount, Toast.LENGTH_SHORT).show();
         
         // Save account
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         prefs.edit().putString(KEY_GOOGLE_ACCOUNT, selectedGoogleAccount).apply();
         
-        // TODO: Check Gmail for existing profile data
-        // For now, assume no data found and go to profile setup
-        Toast.makeText(this, "No profile found. Let's create one!", Toast.LENGTH_SHORT).show();
-        Intent intent = new Intent(this, ProfileSetupActivity.class);
-        intent.putExtra("googleAccount", selectedGoogleAccount);
-        startActivity(intent);
-        finish();
+        // Request additional special permissions (overlay and battery)
+        requestSpecialPermissions();
     }
     
-    private void requestRuntimePermissions() {
-        // Request dangerous permissions
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            requestPermissions(new String[]{
-                Manifest.permission.GET_ACCOUNTS,
-                Manifest.permission.WAKE_LOCK
-            }, REQUEST_PERMISSIONS);
-        }
-        
+    private void requestSpecialPermissions() {
         // Request overlay permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "Please grant overlay permission", Toast.LENGTH_LONG).show();
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:" + getPackageName()));
                 startActivityForResult(intent, REQUEST_OVERLAY);
@@ -144,8 +177,14 @@ public class WelcomeActivity extends Activity {
             }
         }
         
+        // If overlay already granted, request battery
+        requestBatteryPermission();
+    }
+    
+    private void requestBatteryPermission() {
         // Request battery optimization exemption
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Toast.makeText(this, "Please allow app to run in background", Toast.LENGTH_LONG).show();
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
             intent.setData(Uri.parse("package:" + getPackageName()));
@@ -153,13 +192,22 @@ public class WelcomeActivity extends Activity {
             return;
         }
         
+        // If battery already granted, request accessibility
+        requestAccessibilityPermission();
+    }
+    
+    private void requestAccessibilityPermission() {
         // Request accessibility service (user must enable manually)
-        Toast.makeText(this, "Please enable Accessibility Service in Settings", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Please enable Accessibility Service for full functionality", Toast.LENGTH_LONG).show();
         Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
         startActivity(intent);
         
-        // Go to main activity
-        startActivity(new Intent(this, MainActivity.class));
+        // TODO: Check Gmail for existing profile data
+        // For now, go to profile setup
+        Toast.makeText(this, "No profile found. Let's create one!", Toast.LENGTH_SHORT).show();
+        Intent profileIntent = new Intent(this, ProfileSetupActivity.class);
+        profileIntent.putExtra("googleAccount", selectedGoogleAccount);
+        startActivity(profileIntent);
         finish();
     }
     
@@ -167,17 +215,20 @@ public class WelcomeActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSIONS) {
-            // Continue with other permission requests
-            requestRuntimePermissions();
+            // Permissions granted or denied, continue anyway
+            // User can retry if they denied
         }
     }
     
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_OVERLAY || requestCode == REQUEST_BATTERY) {
-            // Continue with next permission
-            requestRuntimePermissions();
+        if (requestCode == REQUEST_OVERLAY) {
+            // Overlay permission result, continue to battery
+            requestBatteryPermission();
+        } else if (requestCode == REQUEST_BATTERY) {
+            // Battery permission result, continue to accessibility
+            requestAccessibilityPermission();
         }
     }
 }
